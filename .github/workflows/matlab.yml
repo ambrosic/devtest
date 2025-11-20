@@ -16,7 +16,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      
+        env:
+          MLM_LICENSE_TOKEN: ${{ secrets.MLM_LICENSE_TOKEN }}
       # Set up MATLAB and other MathWorks products on the runner.
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
