@@ -1,0 +1,13 @@
+name: A very long running task
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Get a good night's rest"
+        # 6 hours
+        run: sleep 21600
