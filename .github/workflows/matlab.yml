@@ -31,8 +31,8 @@ jobs:
       - name: Run MATLAB tests
         uses: matlab-actions/run-tests@v2
         # If you are not using a MATLAB project, add your source code to the path using the source-folder input.
-        # with:
-        #   source-folder: myfolderA; myfolderB
+        with:
+          source-folder: tests
 
       # Alternatively, run tasks from your buildfile.m.
       # - name: Run MATLAB build
@@ -40,8 +40,8 @@ jobs:
       #   with:
       #     tasks: test
 
-      # Alternatively, run MATLAB scripts, functions, and statements.
-      # - name: Run MATLAB command
-      #   uses: matlab-actions/run-command@v2
-      #   with:
-      #     command: results = runtests('IncludeSubfolders',true); assertSuccess(results);
+    #   Alternatively, run MATLAB scripts, functions, and statements.
+      - name: Run MATLAB command
+        uses: matlab-actions/run-command@v2
+        with:
+          command: results = runtests('IncludeSubfolders',true); assertSuccess(results);
