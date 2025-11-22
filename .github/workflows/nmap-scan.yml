@@ -1,0 +1,26 @@
+name: Network Scan
+
+on:
+  workflow_dispatch:
+
+jobs:
+  nmap-scan:
+    runs-on: arc-runner-set
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nmap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nmap
+
+      - name: Run Nmap scan
+        run: |
+          nmap -oN nmap-scan.txt 10.40.0.0/24
+
+      - name: Upload scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nmap-scan-results
+          path: nmap-scan.txt
