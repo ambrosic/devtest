@@ -1,6 +1,5 @@
 name: A very long running task
 on:
-  push:
   workflow_dispatch:
 
 jobs:
