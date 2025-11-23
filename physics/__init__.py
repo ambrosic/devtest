@@ -9,6 +9,7 @@ support table-based or real-gas models in the future.
 from .eos import EquationOfState, IdealGasEOS, GasProperties
 from .state import CylinderState, CylinderDerivatives, StrokeContext
 from .combustion import WiebeHeatRelease
+from .gas_exchange import OrificeFlow, ValveTimingMap
 from .losses import (
     CycleLossModels,
     HeatTransferConditions,
@@ -39,6 +40,8 @@ __all__ = [
     "CylinderDerivatives",
     "StrokeContext",
     "WiebeHeatRelease",
+    "OrificeFlow",
+    "ValveTimingMap",
     "CycleLossModels",
     "HeatTransferConditions",
     "WoschniHeatTransfer",
