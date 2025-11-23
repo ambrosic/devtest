@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .gas_exchange import ValveTimingMap
 
 
 @dataclass
@@ -55,3 +59,5 @@ class StrokeContext:
     wall_heat_loss: float = 0.0  # heat loss rate [J/rad]
     manifold_pressure: float | None = None  # optional boundary pressure [Pa]
     manifold_temperature: float | None = None  # optional boundary temperature [K]
+    valve_timings: "ValveTimingMap | None" = None  # optional valve schedule
+    omega: float | None = None  # crankshaft speed [rad/s]

@@ -11,6 +11,7 @@ from typing import Protocol
 
 from .combustion import WiebeHeatRelease
 from .eos import EquationOfState
+from .gas_exchange import OrificeFlow
 from .state import CylinderDerivatives, CylinderState, StrokeContext
 
 
@@ -34,14 +35,27 @@ class IntakeStroke:
 
     eos: EquationOfState
     flow_coefficient: float = 1e-6  # kg/(Pa*rad)
+    orifice_flow: OrificeFlow | None = None
     name: str = "intake"
 
     def derivatives(self, state: CylinderState, context: StrokeContext) -> CylinderDerivatives:
         if context.manifold_pressure is None or context.manifold_temperature is None:
             raise ValueError("Intake stroke requires manifold pressure and temperature")
 
-        delta_p = context.manifold_pressure - state.pressure
-        dm_dtheta = self.flow_coefficient * delta_p
+        if context.valve_timings is not None and not context.valve_timings.is_intake_open(state.theta):
+            dm_dtheta = 0.0
+        elif self.orifice_flow is not None:
+            if context.omega is None:
+                raise ValueError("Intake stroke with orifice flow requires crankshaft speed")
+            dm_dtheta = self.orifice_flow.mass_flow_per_angle(
+                pressure_upstream=context.manifold_pressure,
+                pressure_downstream=state.pressure,
+                temperature_upstream=context.manifold_temperature,
+                omega=context.omega,
+            )
+        else:
+            delta_p = context.manifold_pressure - state.pressure
+            dm_dtheta = self.flow_coefficient * delta_p
 
         # Energy balance: dU = h_in dm - p dV - q_wall
         cp, cv = self.eos.specific_heats()
@@ -106,14 +120,28 @@ class ExhaustStroke:
 
     eos: EquationOfState
     flow_coefficient: float = 1e-6
+    orifice_flow: OrificeFlow | None = None
     name: str = "exhaust"
 
     def derivatives(self, state: CylinderState, context: StrokeContext) -> CylinderDerivatives:
         if context.manifold_pressure is None or context.manifold_temperature is None:
             raise ValueError("Exhaust stroke requires manifold pressure and temperature")
 
-        delta_p = state.pressure - context.manifold_pressure
-        dm_dtheta = -self.flow_coefficient * delta_p
+        if context.valve_timings is not None and not context.valve_timings.is_exhaust_open(state.theta):
+            dm_dtheta = 0.0
+        elif self.orifice_flow is not None:
+            if context.omega is None:
+                raise ValueError("Exhaust stroke with orifice flow requires crankshaft speed")
+            dm_dtheta = -self.orifice_flow.mass_flow_per_angle(
+                pressure_upstream=state.pressure,
+                pressure_downstream=context.manifold_pressure,
+                temperature_upstream=state.temperature,
+                density_upstream=state.density,
+                omega=context.omega,
+            )
+        else:
+            delta_p = state.pressure - context.manifold_pressure
+            dm_dtheta = -self.flow_coefficient * delta_p
 
         cp, cv = self.eos.specific_heats()
         h_out = cp * state.temperature
