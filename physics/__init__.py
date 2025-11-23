@@ -9,6 +9,19 @@ support table-based or real-gas models in the future.
 from .eos import EquationOfState, IdealGasEOS, GasProperties
 from .state import CylinderState, CylinderDerivatives, StrokeContext
 from .combustion import WiebeHeatRelease
+from .losses import (
+    CycleLossModels,
+    HeatTransferConditions,
+    WoschniHeatTransfer,
+    FrictionModel,
+    ChenFlynnFriction,
+    BlowByConditions,
+    OrificeBlowByLeakage,
+    PumpingConditions,
+    MeanPressurePumpingLoss,
+    LossEvaluationContext,
+    LossTerms,
+)
 from .strokes import (
     StrokeModel,
     IntakeStroke,
@@ -26,6 +39,17 @@ __all__ = [
     "CylinderDerivatives",
     "StrokeContext",
     "WiebeHeatRelease",
+    "CycleLossModels",
+    "HeatTransferConditions",
+    "WoschniHeatTransfer",
+    "FrictionModel",
+    "ChenFlynnFriction",
+    "BlowByConditions",
+    "OrificeBlowByLeakage",
+    "PumpingConditions",
+    "MeanPressurePumpingLoss",
+    "LossEvaluationContext",
+    "LossTerms",
     "StrokeModel",
     "IntakeStroke",
     "CompressionStroke",
