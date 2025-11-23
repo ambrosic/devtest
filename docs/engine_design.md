@@ -10,7 +10,10 @@
   - Diagnostic metrics: peak pressure/temperature, knock margin (where modeled), and mass balance closure.
 
 ## Stepping Strategy and Cylinder State
-- **Stepping decision:** Use adaptive crank-angle stepping with embedded error control to capture rapid combustion heat-release while keeping cost low during smoother intake/exhaust periods. Clamp step sizes between a small minimum (e.g., 0.05°) and a larger cruise step (e.g., 1–2°) to avoid missed events and stiff instabilities. Offer an optional fixed-step mode for deterministic regression tests.
+- **Crank-angle stepping modes:**
+  - **Adaptive:** Embedded error control targets crank-angle-local error tolerances and dynamically shrinks steps near rapid heat-release or strong gradients (e.g., ignition, peak pressure) while expanding toward a maximum cruise step (e.g., 1–2°) during smoother intake/exhaust portions. Steps are clamped by a minimum (e.g., 0.05°) to prevent missed transients.
+  - **Fixed:** Deterministic crank-angle increments (e.g., 0.1–1°) for regression and reproducibility; error control is disabled and event crossings are resolved by aligning the grid with known valve/combustion schedule points.
+- **Event boundary handling (adaptive mode):** When approaching scheduled events (intake/exhaust valve open/close, spark start, fuel injection start/end), the controller reduces the candidate step to land exactly on the boundary if the predicted step would cross it. Post-event, the step size is allowed to grow again according to the error estimator. Spontaneous event detection (e.g., knock limiter, blowdown threshold) is implemented via root-finding hooks that bracket zero-crossings and bisect within the crank-angle step before accepting the solution.
 - **Cylinder state dataclass (conceptual):**
   ```python
   @dataclass
@@ -20,10 +23,8 @@
       pressure: float       # cylinder pressure, Pa
       temperature: float    # bulk-gas temperature, K
       mass: float           # in-cylinder mass, kg
-      gamma: float          # ratio of specific heats, updated with composition/temperature
-      heat_release: float   # cumulative released heat, J
   ```
-  State evolution couples mass/energy balances with heat-release and boundary heat-transfer models; gamma and temperature update via working-fluid property tables/ideal-gas relations.
+  State evolution couples mass/energy balances with heat-release and boundary heat-transfer models; volume is driven by geometry/connecting-rod kinematics and temperature follows from the energy equation with property models.
 
 ## Architecture Overview
 ```mermaid
