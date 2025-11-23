@@ -3,8 +3,11 @@
 from .crank_angle import (
     AdaptiveSettings,
     CrankAngleIntegrator,
+    EventAction,
     EventBoundary,
     IntegrationResult,
+    RootEvent,
+    RootEventHit,
     EulerStepper,
     RK4Stepper,
 )
@@ -12,8 +15,11 @@ from .crank_angle import (
 __all__ = [
     "AdaptiveSettings",
     "CrankAngleIntegrator",
+    "EventAction",
     "EventBoundary",
     "IntegrationResult",
+    "RootEvent",
+    "RootEventHit",
     "EulerStepper",
     "RK4Stepper",
 ]
