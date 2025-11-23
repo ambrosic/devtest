@@ -1,2 +1,6 @@
 # devtest
-this is the sandbox of sandboxes, go nuts
+
+Simulation design notes for thermodynamic cycle analysis.
+
+## Documentation
+- [Engine design overview](docs/engine_design.md)
