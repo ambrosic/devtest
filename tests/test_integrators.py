@@ -6,10 +6,12 @@ import pytest
 from integrators import (
     AdaptiveSettings,
     CrankAngleIntegrator,
+    EventAction,
     EulerStepper,
     EventBoundary,
     IntegrationResult,
     RK4Stepper,
+    RootEvent,
 )
 from physics.state import CylinderDerivatives, CylinderState, StrokeContext
 from physics.strokes import StrokeModel
@@ -89,3 +91,63 @@ def test_rk4_tracks_exponential_temperature():
     final_temp = result.states[-1].temperature
     expected = math.exp(0.5)
     assert pytest.approx(expected, rel=1e-3) == final_temp
+
+
+def test_detects_root_event_and_records_hit():
+    stroke = GradientStroke(pressure_gradient=0.0, temperature_gradient=1.0)
+    context = make_context()
+    root_event = RootEvent(name="peak-temp", function=lambda state, _ctx: state.temperature - 0.5)
+    integrator = CrankAngleIntegrator(EulerStepper(), AdaptiveSettings(max_step=0.25, min_step=1e-4))
+
+    result = integrator.integrate(
+        stroke,
+        make_state(temperature=0.0),
+        theta_end=1.0,
+        base_context=context,
+        root_events=[root_event],
+    )
+
+    assert result.root_events
+    hit = result.root_events[0]
+    assert hit.name == "peak-temp"
+    assert math.isclose(hit.theta, 0.5, abs_tol=1e-6)
+    assert any(math.isclose(s.theta, hit.theta, abs_tol=1e-9) for s in result.states)
+
+
+def test_root_event_callback_can_halt_and_adjust():
+    stroke = GradientStroke(pressure_gradient=0.0, temperature_gradient=1.0)
+    context = make_context()
+
+    def on_event(state: CylinderState, _ctx: StrokeContext) -> EventAction:
+        adjusted = CylinderState(
+            theta=state.theta,
+            volume=state.volume,
+            pressure=state.pressure * 0.5,
+            temperature=state.temperature,
+            mass=state.mass,
+        )
+        return EventAction(halt=True, state=adjusted)
+
+    root_event = RootEvent(
+        name="knock-limit",
+        function=lambda state, _ctx: state.temperature - 0.2,
+        on_event=on_event,
+    )
+
+    integrator = CrankAngleIntegrator(
+        EulerStepper(),
+        AdaptiveSettings(max_step=0.1, min_step=0.05, pressure_tolerance=1e9, temperature_tolerance=1e9),
+    )
+
+    result = integrator.integrate(
+        stroke,
+        make_state(temperature=0.0, pressure=1.0),
+        theta_end=1.0,
+        base_context=context,
+        root_events=[root_event],
+    )
+
+    assert result.root_events
+    final_state = result.states[-1]
+    assert final_state.theta == pytest.approx(0.2, abs=1e-6)
+    assert final_state.pressure == pytest.approx(0.5)

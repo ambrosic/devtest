@@ -51,6 +51,51 @@ class IntegrationResult:
 
     states: list[CylinderState]
     events: list[EventBoundary] = field(default_factory=list)
+    root_events: list["RootEventHit"] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RootEvent:
+    """Root-finding event definition.
+
+    Attributes
+    ----------
+    name:
+        Human-readable label for the event.
+    function:
+        Scalar function evaluated on the cylinder state and context. A root is
+        detected when the sign of this function changes between two integration
+        points.
+    direction:
+        If ``1`` the zero-crossing must go from negative to positive, if ``-1``
+        from positive to negative. ``0`` (default) accepts either direction.
+    on_event:
+        Optional callback executed when the event is detected. It can halt
+        integration or return an adjusted state.
+    """
+
+    name: str
+    function: Callable[[CylinderState, StrokeContext], float]
+    direction: int = 0
+    on_event: Callable[[CylinderState, StrokeContext], "EventAction"] | None = None
+
+
+@dataclass(frozen=True)
+class RootEventHit:
+    """Resolved root event with the state at the crossing."""
+
+    name: str
+    theta: float
+    state: CylinderState
+
+
+@dataclass(frozen=True)
+class EventAction:
+    """Instructions returned by a root-event callback."""
+
+    halt: bool = False
+    state: CylinderState | None = None
+    theta_end: float | None = None
 
 
 class EulerStepper:
@@ -131,17 +176,20 @@ class CrankAngleIntegrator:
         theta_end: float,
         base_context: StrokeContext,
         extra_events: Sequence[EventBoundary] | None = None,
+        root_events: Sequence[RootEvent] | None = None,
     ) -> IntegrationResult:
         """Integrate the stroke until ``theta_end``."""
 
         ctx_provider = self.context_provider or _constant_context_provider(base_context)
         rhs = lambda s, c: stroke.derivatives(s, c)
         boundaries = self._collect_boundaries(stroke, base_context, extra_events, theta_end)
+        root_events = list(root_events or [])
 
         theta = initial_state.theta
         state = initial_state
         states = [initial_state]
         hits: list[EventBoundary] = []
+        root_hits: list[RootEventHit] = []
 
         while theta < theta_end - self.settings.event_tolerance:
             context = ctx_provider(theta, state)
@@ -162,14 +210,46 @@ class CrankAngleIntegrator:
                     if abs(step - distance) <= self.settings.event_tolerance:
                         crossed_event = upcoming
 
-            state = self.stepper.step(rhs, state, step, ctx_provider)
-            theta = state.theta
-            states.append(state)
+            start_state = state
+            start_values = [self._evaluate_event(event, start_state, ctx_provider) for event in root_events]
+
+            trial_state = self.stepper.step(rhs, state, step, ctx_provider)
+
+            root_state, root_hit, action = self._detect_root_event(
+                start_state,
+                trial_state,
+                start_values,
+                root_events,
+                rhs,
+                ctx_provider,
+            )
+
+            if action is not None and action.theta_end is not None:
+                theta_end = min(theta_end, action.theta_end)
+
+            if root_state is not None:
+                state = root_state
+                theta = state.theta
+                states.append(state)
+                if root_hit is not None:
+                    root_hits.append(root_hit)
+
+                if crossed_event is not None and abs(crossed_event.angle - theta) > self.settings.event_tolerance:
+                    crossed_event = None
+
+                if action is not None and action.halt:
+                    if crossed_event is not None:
+                        hits.append(crossed_event)
+                    break
+            else:
+                state = trial_state
+                theta = state.theta
+                states.append(state)
 
             if crossed_event is not None and (not hits or hits[-1] != crossed_event):
                 hits.append(crossed_event)
 
-        return IntegrationResult(states=states, events=hits)
+        return IntegrationResult(states=states, events=hits, root_events=root_hits)
 
     def _propose_step(self, derivs: CylinderDerivatives) -> float:
         settings = self.settings
@@ -221,6 +301,92 @@ class CrankAngleIntegrator:
             if boundary.angle > theta + self.settings.event_tolerance:
                 return boundary
         return None
+
+    def _evaluate_event(
+        self,
+        event: RootEvent,
+        state: CylinderState,
+        ctx_provider: Callable[[float, CylinderState], StrokeContext],
+    ) -> float:
+        context = ctx_provider(state.theta, state)
+        return event.function(state, context)
+
+    def _detect_root_event(
+        self,
+        start_state: CylinderState,
+        end_state: CylinderState,
+        start_values: Sequence[float],
+        root_events: Sequence[RootEvent],
+        rhs: Callable[[CylinderState, StrokeContext], CylinderDerivatives],
+        ctx_provider: Callable[[float, CylinderState], StrokeContext],
+    ) -> tuple[CylinderState | None, RootEventHit | None, EventAction | None]:
+        best_state: CylinderState | None = None
+        best_hit: RootEventHit | None = None
+        best_action: EventAction | None = None
+
+        for event, start_val in zip(root_events, start_values):
+            end_val = self._evaluate_event(event, end_state, ctx_provider)
+            if not self._crossed_event(start_val, end_val, event.direction):
+                continue
+
+            root_state = self._bisect_root(
+                event, start_state, end_state, start_val, end_val, rhs, ctx_provider
+            )
+
+            action = event.on_event(root_state, ctx_provider(root_state.theta, root_state)) if event.on_event else None
+            if action is not None and action.state is not None:
+                root_state = action.state
+
+            hit = RootEventHit(name=event.name, theta=root_state.theta, state=root_state)
+
+            if best_state is None or root_state.theta < best_state.theta - self.settings.event_tolerance:
+                best_state, best_hit, best_action = root_state, hit, action
+
+        return best_state, best_hit, best_action
+
+    def _bisect_root(
+        self,
+        event: RootEvent,
+        start_state: CylinderState,
+        end_state: CylinderState,
+        start_value: float,
+        end_value: float,
+        rhs: Callable[[CylinderState, StrokeContext], CylinderDerivatives],
+        ctx_provider: Callable[[float, CylinderState], StrokeContext],
+    ) -> CylinderState:
+        low_state, high_state = start_state, end_state
+        low_val, high_val = start_value, end_value
+
+        if low_state.theta > high_state.theta:
+            low_state, high_state = high_state, low_state
+            low_val, high_val = high_val, low_val
+
+        tolerance = self.settings.event_tolerance
+
+        while high_state.theta - low_state.theta > tolerance:
+            mid_theta = 0.5 * (low_state.theta + high_state.theta)
+            mid_step = mid_theta - low_state.theta
+            mid_state = self.stepper.step(rhs, low_state, mid_step, ctx_provider)
+            mid_val = self._evaluate_event(event, mid_state, ctx_provider)
+
+            if mid_val == 0 or mid_val * low_val < 0:
+                high_state, high_val = mid_state, mid_val
+            else:
+                low_state, low_val = mid_state, mid_val
+
+        return high_state if abs(high_val) < abs(low_val) else low_state
+
+    def _crossed_event(self, start_value: float, end_value: float, direction: int) -> bool:
+        if start_value == 0.0 or end_value == 0.0:
+            return True
+        if start_value * end_value > 0.0:
+            return False
+
+        if direction > 0:
+            return start_value < 0.0 and end_value > 0.0
+        if direction < 0:
+            return start_value > 0.0 and end_value < 0.0
+        return True
 
 
 def _advance_state(
